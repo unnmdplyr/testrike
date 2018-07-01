@@ -1,0 +1,49 @@
+<idea-plugin>
+  <id>com.vv.testrike</id>
+  <name>Plugin display name here</name>
+  <version>1.0</version>
+  <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+
+  <description><![CDATA[
+      Enter short description for your plugin here.<br>
+      <em>most HTML tags may be used</em>
+    ]]></description>
+
+  <change-notes><![CDATA[
+      Add change notes here.<br>
+      <em>most HTML tags may be used</em>
+    ]]>
+  </change-notes>
+
+  <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
+  <idea-version since-build="173.0"/>
+
+  <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+       on how to target different products -->
+  <!-- uncomment to enable plugin in all products
+  <depends>com.intellij.modules.lang</depends>
+  -->
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Add your extensions here -->
+  </extensions>
+
+  <actions>
+    <action id="testrike.ID" class="com.vv.testrike.GotoTest" text="Goto Test" description="The action implemented by GotoTest class">
+      <keyboard-shortcut keymap="$default" first-keystroke="shift ctrl A" second-keystroke="W"/>
+    </action>
+
+    <action id="testrike.textboxes.ID" class="com.vv.testrike.TextBoxes" text="Show Textboxes" description="The action implemented by TextBoxes class">
+      <keyboard-shortcut keymap="$default" first-keystroke="shift ctrl A" second-keystroke="Q"/>
+    </action>
+
+    <action id="generateComparisionChain" class="com.vv.testrike.comparisonchain.GenerateAction" text="Comparison Chain ...">
+        <add-to-group group-id="GenerateGroup" anchor="last"></add-to-group>
+    </action>
+
+    <action id="generateTestClass" class="com.vv.testrike.generatetest.GenerateTestAction" text="Genreated Test class ...">
+      <add-to-group group-id="GenerateGroup" anchor="last"></add-to-group>
+    </action>
+  </actions>
+
+</idea-plugin>
