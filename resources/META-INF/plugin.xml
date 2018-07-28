@@ -25,7 +25,11 @@
   -->
 
   <extensions defaultExtensionNs="com.intellij">
-    <!-- Add your extensions here -->
+    <localInspection implementationClass="com.vv.testrike.comparisonchain.EqualsCompareConsistencyInspection"
+                     displayName="compareTo inconsistent with equals()"
+                     groupPath="Java"
+                     groupName="Probable bugs"
+                     enabledByDefault="true"/>
   </extensions>
 
   <actions>
