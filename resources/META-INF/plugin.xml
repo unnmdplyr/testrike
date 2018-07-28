@@ -30,6 +30,10 @@
                      groupPath="Java"
                      groupName="Probable bugs"
                      enabledByDefault="true"/>
+
+      <intentionAction>
+          <className>com.vv.testrike.comparisonchain.CompareFalseFirstIntention</className>
+      </intentionAction>
   </extensions>
 
   <actions>

@@ -13,6 +13,8 @@ import com.intellij.psi.util.PsiTreeUtil;
 import java.util.List;
 
 public class GenerateAction extends AnAction {
+    public static final String COM_GOOGLE_COMMON_COLLECT_COMPARISON_CHAIN = "com.google.common.collect.ComparisonChain";
+
     @Override
     public void actionPerformed(AnActionEvent e) {
         PsiClass psiClass = getPsiClassFromContext(e);
@@ -53,7 +55,7 @@ public class GenerateAction extends AnAction {
     private void generateCompareTo(PsiClass psiClass, List<PsiField> fields) {
         StringBuilder builder = new StringBuilder();
         builder.append("public int compareTo(").append(psiClass.getName()).append(" that) {\n")
-                .append("return com.google.common.collect.ComparisonChain.start()\n");
+                .append("return " + COM_GOOGLE_COMMON_COLLECT_COMPARISON_CHAIN + ".start()\n");
         for (PsiField field : fields) {
             builder.append(".compare(this.").append(field.getName()).append(", that.").append(field.getName()).append(")\n");
         }
