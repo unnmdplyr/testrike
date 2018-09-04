@@ -1,6 +1,5 @@
 package com.vv.testrike.generatetest;
 
-import com.intellij.ide.IdeView;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.LangDataKeys;
@@ -9,9 +8,10 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileTypes.StdFileTypes;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.roots.impl.ModuleRootManagerImpl;
 import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
@@ -25,9 +25,8 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Stream;
 
 public class GenerateTestAction extends AnAction {
 
@@ -47,7 +46,9 @@ public class GenerateTestAction extends AnAction {
             addMockFields(project, psiClass, psiTestClass);
             addMethodsTests(project, psiClass, psiTestClass);
 
-            JavaCodeStyleManager.getInstance(project).shortenClassReferences(psiTestClass);
+            WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>)() ->
+                JavaCodeStyleManager.getInstance(project).shortenClassReferences(psiTestClass)
+            );
 
         } catch (Exception e1) {
             e1.printStackTrace();
@@ -87,7 +88,7 @@ public class GenerateTestAction extends AnAction {
         String capitalizedMethodName = methodName.substring(0, 1).toUpperCase() + methodName.substring(1);
         String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
         PsiMethod methodFromText = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
-        methodFromText.getModifierList().addAnnotation("org.junit.Test");
+        methodFromText.getModifierList().addAnnotation("org.junit.jupiter.api.Test");
 
         WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IOException>)() ->
                 psiTestClass.add(methodFromText)
@@ -147,7 +148,7 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
-    private void addInjectMocksField(Project project, PsiClass psiClass, PsiClass psiTestClass) throws IOException {
+    private void addInjectMocksField(Project project, @NotNull PsiClass psiClass, PsiClass psiTestClass) throws IOException {
         String fieldName = psiClass.getName().substring(0, 1).toLowerCase() + psiClass.getName().substring(1);
         String fieldDefinition = "private " + psiClass.getName() + " " + fieldName + ";";
         PsiField injectMocksField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDefinition, psiTestClass);
@@ -158,6 +159,7 @@ public class GenerateTestAction extends AnAction {
         );
     }
 
+    @Nullable
     private PsiJavaFile getTestFile(AnActionEvent e, Project project, PsiClass psiClass) throws IOException {
         String packageName = getPackageName(e);
         PsiDirectory psiDirectory = getTheFirstPsiDirectoryInTheProject(e, project);
@@ -188,7 +190,7 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
-    private PsiJavaFile createTestClass(Project project, String packageName, PsiClass psiClass) throws IOException {
+    private PsiJavaFile createTestClass(Project project, String packageName, @NotNull PsiClass psiClass) throws IOException {
         String testFileName = psiClass.getName() + "Test." + StdFileTypes.JAVA.getDefaultExtension();
         String content = "public class " + psiClass.getName() + "Test {}";
 
@@ -211,7 +213,7 @@ public class GenerateTestAction extends AnAction {
     }
 
     @NotNull
-    private String getPackageName(AnActionEvent e) {
+    private String getPackageName(@NotNull AnActionEvent e) {
         PsiFile psiFile = e.getData(LangDataKeys.PSI_FILE);
         if (psiFile instanceof PsiJavaFile) {
             PsiJavaFile javaFile = (PsiJavaFile) psiFile;
@@ -221,22 +223,35 @@ public class GenerateTestAction extends AnAction {
     }
 
     @Nullable
-    private PsiDirectory getTheFirstPsiDirectoryInTheProject(AnActionEvent e, Project project) {
-        final IdeView view = e.getData(LangDataKeys.IDE_VIEW);
-        if (view == null) {
-            return null;
+    private PsiDirectory getTheFirstPsiDirectoryInTheProject(@NotNull AnActionEvent e, @NotNull Project project) {
+        PsiFile psiFile = e.getData(LangDataKeys.PSI_FILE);
+        Module module = ModuleUtilCore.findModuleForFile(psiFile);
+        List<VirtualFile> testSourceRoots = ModuleRootManagerImpl.getInstance(module).getSourceRoots(JavaModuleSourceRootTypes.TESTS);
+        if (testSourceRoots.isEmpty()) {
+            throw new IncorrectOperationException("Test source folder doesn't exist. It should.\n");
         }
 
-        final ProjectRootManager rootManager = ProjectRootManager.getInstance(project);
-        final ProjectFileIndex fileIndex = rootManager.getFileIndex();
-        final Optional<PsiDirectory> sourceDirectory = Stream.of(view.getDirectories())
-                .filter(directory -> {
-                    final VirtualFile virtualFile = directory.getVirtualFile();
-                    return fileIndex.isUnderSourceRootOfType(virtualFile, JavaModuleSourceRootTypes.SOURCES);
-                })
-                .findFirst();
+        VirtualFile virtualFile = testSourceRoots.get(0);
+        PsiDirectory directory = PsiManager.getInstance(project).findDirectory(virtualFile);
+        return getOrCreateDirectoryAccordingToPackageHierarchy(directory, getPackageName(e), project);
+    }
 
-        return sourceDirectory.orElse(null);
+    private PsiDirectory getOrCreateDirectoryAccordingToPackageHierarchy(@NotNull PsiDirectory psiDirectory, @NotNull String packageNameChain, Project project) {
+        String[] packageNames = packageNameChain.split("\\.");
+
+        PsiDirectory currentPsiDirectory = psiDirectory;
+        for (String packageName: packageNames) {
+            PsiDirectory subdirectory = currentPsiDirectory.findSubdirectory(packageName);
+            if (subdirectory == null) {
+                final PsiDirectory parentDirectory = currentPsiDirectory;
+                currentPsiDirectory = WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiDirectory, IncorrectOperationException>)() ->
+                        parentDirectory.createSubdirectory(packageName)
+                );
+            }
+            else
+                currentPsiDirectory = subdirectory;
+        }
+        return currentPsiDirectory;
     }
 
     @Override
@@ -245,7 +260,8 @@ public class GenerateTestAction extends AnAction {
         e.getPresentation().setEnabled(psiClass != null);
     }
 
-    private PsiClass getPsiClassFromContext(AnActionEvent e) {
+    @Nullable
+    private PsiClass getPsiClassFromContext(@NotNull AnActionEvent e) {
         PsiFile psiFile = e.getData(LangDataKeys.PSI_FILE);
         Editor editor = e.getData(PlatformDataKeys.EDITOR);
         if (psiFile == null || editor == null) {
