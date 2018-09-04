@@ -1,0 +1,12 @@
+If the test source folder doesn't exist
+    then create a new one.
+
+If the classpath contains junit 4.12 or jupiter or TestNG
+    then the @Test annotation on the unit test method should be different one.
+
+Go through the production method and investigate the statements in it.
+
+If not field injection is used but constructor injection
+    then the test generation also should work.
+
+Doing all write operations in one runWriteCommandAction block.
