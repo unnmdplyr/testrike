@@ -8,5 +8,6 @@ Go through the production method and investigate the statements in it.
 
 If not field injection is used but constructor injection
     then the test generation also should work.
+    The mock fields visibility must be same as the fields in the production code.
 
 Doing all write operations in one runWriteCommandAction block.

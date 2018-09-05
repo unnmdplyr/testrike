@@ -27,6 +27,8 @@ import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 public class GenerateTestAction extends AnAction {
 
@@ -44,6 +46,7 @@ public class GenerateTestAction extends AnAction {
 
             addInjectMocksField(project, psiClass, psiTestClass);
             addMockFields(project, psiClass, psiTestClass);
+            addMockFieldsFromConstructor(project, psiClass, psiTestClass);
             addMethodsTests(project, psiClass, psiTestClass);
 
             WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>)() ->
@@ -58,9 +61,11 @@ public class GenerateTestAction extends AnAction {
     private void addMethodsTests(Project project, PsiClass psiClass, PsiClass psiTestClass) throws IOException {
         PsiMethod[] methodsInClass = psiClass.getMethods();
         for (PsiMethod aMethodInClass : methodsInClass) {
-            PsiModifierList modifierList = aMethodInClass.getModifierList();
-            if (isPublicOrProtectedOrPackagePrivate(modifierList)) {
-                addMethodTests(project, aMethodInClass, psiClass, psiTestClass);
+            if (!aMethodInClass.isConstructor()) {
+                PsiModifierList modifierList = aMethodInClass.getModifierList();
+                if (isPublicOrProtectedOrPackagePrivate(modifierList)) {
+                    addMethodTests(project, aMethodInClass, psiClass, psiTestClass);
+                }
             }
         }
     }
@@ -86,7 +91,9 @@ public class GenerateTestAction extends AnAction {
         }
 
         String capitalizedMethodName = methodName.substring(0, 1).toUpperCase() + methodName.substring(1);
-        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
+        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {\n"
+                + "\t\t//  given\n"
+                + "}";
         PsiMethod methodFromText = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
         methodFromText.getModifierList().addAnnotation("org.junit.jupiter.api.Test");
 
@@ -98,20 +105,26 @@ public class GenerateTestAction extends AnAction {
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) throws IOException {
         PsiField[] allFields = psiClass.getAllFields();
         for (PsiField psiField : allFields) {
-            if (isFieldAutowired(psiField)) {
+            if (containsAutowiredOrInjectAnnotation(psiField.getAnnotations())) {
                 addMockField(project, psiTestClass, psiField);
             }
         }
     }
 
-    private boolean isFieldAutowired(PsiField psiField) {
-        PsiAnnotation[] annotations = psiField.getAnnotations();
-        for (PsiAnnotation annotation : annotations) {
-            if (annotationContainsAutowiredOrInject(annotation)) {
-                return true;
+    private void addMockFieldsFromConstructor(Project project, PsiClass psiClass, PsiClass psiTestClass) throws IOException {
+        PsiMethod[] constructors = psiClass.getConstructors();
+        for (PsiMethod psiMethod : constructors) {
+            if (containsAutowiredOrInjectAnnotation(psiMethod.getAnnotations())) {
+                addMockField(project, psiTestClass, psiMethod);
             }
         }
-        return false;
+    }
+
+    private boolean containsAutowiredOrInjectAnnotation(PsiAnnotation[] annotations) {
+        Optional<PsiAnnotation> firstAutowiredOrInjectAnnotation = Stream.of(annotations)
+                .filter(this::annotationContainsAutowiredOrInject)
+                .findFirst();
+        return firstAutowiredOrInjectAnnotation.isPresent();
     }
 
     private boolean annotationContainsAutowiredOrInject(PsiAnnotation annotation) {
@@ -120,10 +133,22 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addMockField(Project project, PsiClass psiTestClass, PsiField psiField) throws IOException {
-        String accessModifier = getAccessModifier(psiField);
+        String accessModifier = getAccessModifier(psiField.getModifierList());
+        createMockField(accessModifier, psiField, project, psiTestClass);
+    }
 
+    private void addMockField(Project project, PsiClass psiTestClass, PsiMethod psiMethod) throws IOException {
+        PsiParameterList parameterList = psiMethod.getParameterList();
+        PsiParameter[] parameters = parameterList.getParameters();
+        for (PsiParameter parameter : parameters) {
+            createMockField("private", parameter, project, psiTestClass);
+        }
+    }
+
+    private void createMockField(String accessModifier, PsiVariable psiVariable, Project project, PsiClass psiTestClass) throws IOException {
         String fieldDeclaration = accessModifier + (accessModifier.isEmpty() ? "" : " ")
-                + psiField.getType().getCanonicalText(false) + " " + psiField.getName() + ";";
+                + psiVariable.getType().getCanonicalText() + " " + psiVariable.getName() + ";";
+
         PsiField mockField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDeclaration, psiTestClass);
         Objects.requireNonNull(mockField.getModifierList()).addAnnotation("org.mockito.Mock");
 
@@ -132,8 +157,7 @@ public class GenerateTestAction extends AnAction {
         );
     }
 
-    private String getAccessModifier(PsiField psiField) {
-        PsiModifierList modifierList = psiField.getModifierList();
+    private String getAccessModifier(PsiModifierList modifierList) {
         if (Objects.requireNonNull(modifierList).hasExplicitModifier("public")) {
             return "public";
         }
