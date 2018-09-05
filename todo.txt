@@ -6,8 +6,15 @@ If the classpath contains junit 4.12 or jupiter or TestNG
 
 Go through the production method and investigate the statements in it.
 
-If not field injection is used but constructor injection
-    then the test generation also should work.
-    The mock fields visibility must be same as the fields in the production code.
+If constructor injection is used
+    then the mock fields visibility must be the same as the fields visibility in the production code.
+
+Add given, when, then comments to the test code.
+
+Add when().thenReturn() parts.
+
+Add verify() parts.
+
+Add assert parts.
 
 Doing all write operations in one runWriteCommandAction block.

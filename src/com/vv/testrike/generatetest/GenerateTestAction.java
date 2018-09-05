@@ -145,18 +145,6 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
-    private void createMockField(String accessModifier, PsiVariable psiVariable, Project project, PsiClass psiTestClass) throws IOException {
-        String fieldDeclaration = accessModifier + (accessModifier.isEmpty() ? "" : " ")
-                + psiVariable.getType().getCanonicalText() + " " + psiVariable.getName() + ";";
-
-        PsiField mockField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDeclaration, psiTestClass);
-        Objects.requireNonNull(mockField.getModifierList()).addAnnotation("org.mockito.Mock");
-
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IOException>)() ->
-                psiTestClass.add(mockField)
-        );
-    }
-
     private String getAccessModifier(PsiModifierList modifierList) {
         if (Objects.requireNonNull(modifierList).hasExplicitModifier("public")) {
             return "public";
@@ -172,21 +160,33 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
+    private void createMockField(String accessModifier, PsiVariable psiVariable, Project project, PsiClass psiTestClass) throws IOException {
+        String fieldDeclaration = accessModifier + (accessModifier.isEmpty() ? "" : " ")
+                + psiVariable.getType().getCanonicalText() + " " + psiVariable.getName() + ";";
+
+        createAnnotatedField(fieldDeclaration, project, psiTestClass, "org.mockito.Mock");
+    }
+
     private void addInjectMocksField(Project project, @NotNull PsiClass psiClass, PsiClass psiTestClass) throws IOException {
         String fieldName = psiClass.getName().substring(0, 1).toLowerCase() + psiClass.getName().substring(1);
-        String fieldDefinition = "private " + psiClass.getName() + " " + fieldName + ";";
-        PsiField injectMocksField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDefinition, psiTestClass);
-        injectMocksField.getModifierList().addAnnotation("org.mockito.InjectMocks");
+        String fieldDeclaration = "private " + psiClass.getName() + " " + fieldName + ";";
+
+        createAnnotatedField(fieldDeclaration, project, psiTestClass, "org.mockito.InjectMocks");
+    }
+
+    private void createAnnotatedField(String fieldDeclaration, Project project, PsiClass psiTestClass, String annotation) throws IOException {
+        PsiField psiField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDeclaration, psiTestClass);
+        Objects.requireNonNull(psiField.getModifierList()).addAnnotation(annotation);
 
         WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IOException>)() ->
-                psiTestClass.add(injectMocksField)
+                psiTestClass.add(psiField)
         );
     }
 
     @Nullable
     private PsiJavaFile getTestFile(AnActionEvent e, Project project, PsiClass psiClass) throws IOException {
         String packageName = getPackageName(e);
-        PsiDirectory psiDirectory = getTheFirstPsiDirectoryInTheProject(e, project);
+        PsiDirectory psiDirectory = getTestSourceRootFolderInTheModule(e);
         if (psiDirectory == null)
             return null;
 
@@ -247,7 +247,7 @@ public class GenerateTestAction extends AnAction {
     }
 
     @Nullable
-    private PsiDirectory getTheFirstPsiDirectoryInTheProject(@NotNull AnActionEvent e, @NotNull Project project) {
+    private PsiDirectory getTestSourceRootFolderInTheModule(@NotNull AnActionEvent e) {
         PsiFile psiFile = e.getData(LangDataKeys.PSI_FILE);
         Module module = ModuleUtilCore.findModuleForFile(psiFile);
         List<VirtualFile> testSourceRoots = ModuleRootManagerImpl.getInstance(module).getSourceRoots(JavaModuleSourceRootTypes.TESTS);
@@ -255,6 +255,7 @@ public class GenerateTestAction extends AnAction {
             throw new IncorrectOperationException("Test source folder doesn't exist. It should.\n");
         }
 
+        Project project = module.getProject();
         VirtualFile virtualFile = testSourceRoots.get(0);
         PsiDirectory directory = PsiManager.getInstance(project).findDirectory(virtualFile);
         return getOrCreateDirectoryAccordingToPackageHierarchy(directory, getPackageName(e), project);
