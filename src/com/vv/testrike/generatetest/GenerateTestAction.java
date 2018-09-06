@@ -99,7 +99,7 @@ public class GenerateTestAction extends AnAction {
 
         String methodName = method.getName();
         String capitalizedMethodName = methodName.substring(0, 1).toUpperCase() + methodName.substring(1);
-        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {\n}";
+        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
         createAnnotatedMethod(methodText, project, psiTestClass, "org.junit.jupiter.api.Test");
     }
 
@@ -107,13 +107,9 @@ public class GenerateTestAction extends AnAction {
         PsiMethod psiMethod = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
         psiMethod.getModifierList().addAnnotation(annotation);
 
-        PsiComment comment = JavaPsiFacade.getElementFactory(project).createCommentFromText("//  given", psiMethod.getBody());
-
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
-            psiMethod.getBody().add(comment);
-            psiTestClass.add(psiMethod);
-            return null;
-        });
+        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>) () ->
+            psiTestClass.add(psiMethod)
+        );
     }
 
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) {
@@ -226,6 +222,7 @@ public class GenerateTestAction extends AnAction {
         if (classes.length == 0) {
             throw new IncorrectOperationException("This template did not produce a Java class or an interface\n" + psiTestFile.getText());
         }
+        classes[0].getModifierList().addAnnotation("org.junit.jupiter.api.extension.ExtendWith(org.springframework.test.context.junit.jupiter.SpringExtension.class)");
 
         WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
             psiJavaTestFile.setPackageName(packageName);
