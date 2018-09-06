@@ -27,7 +27,6 @@ import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.stream.Stream;
 
 public class GenerateTestAction extends AnAction {
@@ -62,18 +61,14 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addMethodsTests(Project project, PsiClass psiClass, PsiClass psiTestClass) {
-        PsiMethod[] methodsInClass = psiClass.getMethods();
-        for (PsiMethod aMethodInClass : methodsInClass) {
-            if (!aMethodInClass.isConstructor()) {
-                PsiModifierList modifierList = aMethodInClass.getModifierList();
-                if (isPublicOrProtectedOrPackagePrivate(modifierList)) {
-                    addMethodTests(project, aMethodInClass, psiClass, psiTestClass);
-                }
-            }
-        }
+        Stream.of(psiClass.getMethods())
+                .filter(method -> !method.isConstructor() && isPublicOrProtectedOrPackagePrivate(method))
+                .forEach(method -> addMethodTests(project, method, psiClass, psiTestClass));
     }
 
-    private boolean isPublicOrProtectedOrPackagePrivate(PsiModifierList modifierList) {
+    private boolean isPublicOrProtectedOrPackagePrivate(PsiMethod method) {
+        PsiModifierList modifierList = method.getModifierList();
+
         return modifierList.hasExplicitModifier("public")
                 || modifierList.hasExplicitModifier("protected")
                 || !modifierList.hasExplicitModifier("private");
@@ -122,28 +117,20 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) {
-        PsiField[] allFields = psiClass.getAllFields();
-        for (PsiField psiField : allFields) {
-            if (containsAutowiredOrInjectAnnotation(psiField.getAnnotations())) {
-                addMockField(project, psiTestClass, psiField);
-            }
-        }
+        Stream.of(psiClass.getAllFields())
+                .filter(this::containsAutowiredOrInjectAnnotation)
+                .forEach(psiField -> addMockField(project, psiTestClass, psiField));
     }
 
     private void addMockFieldsFromConstructor(Project project, PsiClass psiClass, PsiClass psiTestClass) {
-        PsiMethod[] constructors = psiClass.getConstructors();
-        for (PsiMethod psiMethod : constructors) {
-            if (containsAutowiredOrInjectAnnotation(psiMethod.getAnnotations())) {
-                addMockField(project, psiTestClass, psiMethod);
-            }
-        }
+        Stream.of(psiClass.getConstructors())
+                .filter(this::containsAutowiredOrInjectAnnotation)
+                .forEach(psiMethod -> addMockField(project, psiTestClass, psiMethod));
     }
 
-    private boolean containsAutowiredOrInjectAnnotation(PsiAnnotation[] annotations) {
-        Optional<PsiAnnotation> firstAutowiredOrInjectAnnotation = Stream.of(annotations)
-                .filter(this::annotationContainsAutowiredOrInject)
-                .findFirst();
-        return firstAutowiredOrInjectAnnotation.isPresent();
+    private boolean containsAutowiredOrInjectAnnotation(PsiModifierListOwner psiModifierListOwner) {
+        return Stream.of(psiModifierListOwner.getAnnotations())
+                .anyMatch(this::annotationContainsAutowiredOrInject);
     }
 
     private boolean annotationContainsAutowiredOrInject(PsiAnnotation annotation) {
@@ -157,11 +144,8 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addMockField(Project project, PsiClass psiTestClass, PsiMethod psiMethod) {
-        PsiParameterList parameterList = psiMethod.getParameterList();
-        PsiParameter[] parameters = parameterList.getParameters();
-        for (PsiParameter parameter : parameters) {
-            createMockField("private", parameter, project, psiTestClass);
-        }
+        Stream.of(psiMethod.getParameterList().getParameters())
+                .forEach(parameter -> createMockField("private", parameter, project, psiTestClass));
     }
 
     private String getAccessModifier(PsiModifierList modifierList) {
