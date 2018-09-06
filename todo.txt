@@ -1,10 +1,7 @@
-If the test source folder doesn't exist
-    then create a new one.
-
 If the classpath contains junit 4.12 or jupiter or TestNG
     then the @Test annotation on the unit test method should be different one.
 
-Go through the production method and investigate the statements in it.
+> Go through the production method and investigate the statements in it.
 
 If constructor injection is used
     then the mock fields visibility must be the same as the fields visibility in the production code.
@@ -18,3 +15,9 @@ Add verify() parts.
 Add assert parts.
 
 Doing all write operations in one runWriteCommandAction block.
+
+If the test source folder doesn't exist
+    then create a new one.
+
+If the test file to be created already exists
+    then create a warning.
