@@ -42,16 +42,16 @@ public class GenerateTestAction extends AnAction {
 
         Project project = e.getData(LangDataKeys.PROJECT);
         try {
-            PsiJavaFile psiJavaTestFile = getTestFile(e, project, psiClass);
-            PsiClass psiTestClass = psiJavaTestFile.getClasses()[0];
-            OpenSourceUtil.navigate(psiTestClass);
-
-            addInjectMocksField(project, psiClass, psiTestClass);
-            addMockFields(project, psiClass, psiTestClass);
-            addMockFieldsFromConstructor(project, psiClass, psiTestClass);
-            addMethodsTests(project, psiClass, psiTestClass);
-
             WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
+                PsiJavaFile psiJavaTestFile = getTestFile(e, project, psiClass);
+                PsiClass psiTestClass = psiJavaTestFile.getClasses()[0];
+                OpenSourceUtil.navigate(psiTestClass);
+
+                addInjectMocksField(project, psiClass, psiTestClass);
+                addMockFields(project, psiClass, psiTestClass);
+                addMockFieldsFromConstructor(project, psiClass, psiTestClass);
+                addMethodsTests(project, psiClass, psiTestClass);
+
                 JavaCodeStyleManager.getInstance(project).shortenClassReferences(psiTestClass);
                 JavaCodeStyleManager.getInstance(project).optimizeImports(psiTestClass.getContainingFile());
                 CodeStyleManager.getInstance(project).reformat(psiTestClass);
@@ -138,10 +138,7 @@ public class GenerateTestAction extends AnAction {
     private PsiMethod createAnnotatedMethod(String methodText, Project project, @NotNull PsiClass psiTestClass, String annotation) {
         PsiMethod psiMethod = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
         psiMethod.getModifierList().addAnnotation(annotation);
-
-        return WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiMethod, IncorrectOperationException>) () ->
-                (PsiMethod) psiTestClass.add(psiMethod)
-        );
+        return (PsiMethod) psiTestClass.add(psiMethod);
     }
 
     private void addGivenStatements(Project project, @NotNull PsiMethod psiMethod, @NotNull List<String> givenStatements) {
@@ -152,14 +149,11 @@ public class GenerateTestAction extends AnAction {
 
         PsiComment commentGiven = psiElementFactory.createCommentFromText("//  given", psiMethod.getBody());
 
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
-            if (!psiGivenStatements.isEmpty()) {
-                PsiElement firstChild = psiGivenStatements.get(0).getFirstChild();
-                psiGivenStatements.get(0).addBefore(commentGiven, firstChild);
-            }
-            psiGivenStatements.forEach(psiMethod.getBody()::add);
-            return null;
-        });
+        if (!psiGivenStatements.isEmpty()) {
+            PsiElement firstChild = psiGivenStatements.get(0).getFirstChild();
+            psiGivenStatements.get(0).addBefore(commentGiven, firstChild);
+        }
+        psiGivenStatements.forEach(psiMethod.getBody()::add);
     }
 
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) {
@@ -223,10 +217,7 @@ public class GenerateTestAction extends AnAction {
     private void createAnnotatedField(String fieldDeclaration, Project project, PsiClass psiTestClass, String annotation) {
         PsiField psiField = JavaPsiFacade.getElementFactory(project).createFieldFromText(fieldDeclaration, psiTestClass);
         Objects.requireNonNull(psiField.getModifierList()).addAnnotation(annotation);
-
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>) () ->
-                psiTestClass.add(psiField)
-        );
+        psiTestClass.add(psiField);
     }
 
     @Nullable
@@ -241,13 +232,8 @@ public class GenerateTestAction extends AnAction {
 
         JavaDirectoryServiceImpl.checkCreateClassOrInterface(psiDirectory, className);
 
-        PsiJavaFile psiJavaTestFile2 = ApplicationManager.getApplication().runWriteAction((ThrowableComputable<PsiJavaFile, IncorrectOperationException>) () ->
-                (PsiJavaFile) psiJavaTestFile.setName(className + "." + StdFileTypes.JAVA.getDefaultExtension())
-        );
-
-        PsiElement addedElement = WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>) () ->
-                psiDirectory.add(psiJavaTestFile2)
-        );
+        PsiJavaFile psiJavaTestFile2 = (PsiJavaFile) psiJavaTestFile.setName(className + "." + StdFileTypes.JAVA.getDefaultExtension());
+        PsiElement addedElement = psiDirectory.add(psiJavaTestFile2);
 
         if (addedElement instanceof PsiJavaFile) {
             return (PsiJavaFile) addedElement;
@@ -274,11 +260,7 @@ public class GenerateTestAction extends AnAction {
         }
         classes[0].getModifierList().addAnnotation("org.junit.jupiter.api.extension.ExtendWith(org.springframework.test.context.junit.jupiter.SpringExtension.class)");
 
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
-            psiJavaTestFile.setPackageName(packageName);
-            return null;
-        });
-
+        psiJavaTestFile.setPackageName(packageName);
         return psiJavaTestFile;
     }
 
@@ -313,13 +295,7 @@ public class GenerateTestAction extends AnAction {
         PsiDirectory currentPsiDirectory = psiDirectory;
         for (String packageName : packageNames) {
             PsiDirectory subdirectory = currentPsiDirectory.findSubdirectory(packageName);
-            if (subdirectory == null) {
-                final PsiDirectory parentDirectory = currentPsiDirectory;
-                currentPsiDirectory = WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiDirectory, IncorrectOperationException>) () ->
-                        parentDirectory.createSubdirectory(packageName)
-                );
-            } else
-                currentPsiDirectory = subdirectory;
+            currentPsiDirectory = subdirectory == null ? currentPsiDirectory.createSubdirectory(packageName) : subdirectory;
         }
         return currentPsiDirectory;
     }

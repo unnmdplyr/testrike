@@ -14,8 +14,6 @@ Add verify() parts.
 
 Add assert parts.
 
-Doing all write operations in one runWriteCommandAction block.
-
 If the test source folder doesn't exist
     then create a new one.
 
