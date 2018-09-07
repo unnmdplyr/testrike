@@ -74,32 +74,70 @@ public class GenerateTestAction extends AnAction {
                 || !modifierList.hasExplicitModifier("private");
     }
 
-    private void addMethodTests(Project project, PsiMethod method, PsiClass psiClass, PsiClass psiTestClass) {
-        method.acceptChildren(new PsiElementVisitor() {
-            public void visitElement(PsiElement element) {
-                if (element instanceof PsiCodeBlock) {
-                    System.out.println("  type: codeBlock; element: \"" + element.getText() + "\"");
-                    element.acceptChildren(new PsiElementVisitor() {
-                        @Override
-                        public void visitElement(PsiElement element) {
-                            System.out.println("  type: inner codeBlock; element: \"" + element.getText() + "\"");
-                        }
-                    });
-                }
-            }
-        });
+    private static class WalkingVisitor extends JavaRecursiveElementWalkingVisitor {
 
-        PsiCodeBlock body = method.getBody();
-        if (body != null) {
-            PsiStatement[] statements = body.getStatements();
-            for (PsiStatement statement : statements) {
-                System.out.println("statement: " + statement.getText());
+        private final PsiClass psiClass;
+        private final StringBuilder stringBuilder;
+
+        WalkingVisitor(PsiClass psiClass, StringBuilder stringBuilder) {
+            this.psiClass = psiClass;
+            this.stringBuilder = stringBuilder;
+        }
+
+        private StringBuilder getStringBuilder() {
+            return stringBuilder;
+        }
+
+        @Override
+        public void visitMethodCallExpression(PsiMethodCallExpression methodCallExpression) {
+            PsiExpressionList argumentList = methodCallExpression.getArgumentList();
+            Stream.of(argumentList.getExpressions())
+                    .forEach(argExpression -> System.out.println(argExpression.getType().getCanonicalText()));
+
+            PsiReferenceExpression methodExpression = methodCallExpression.getMethodExpression();
+            PsiExpression qualifierExpression = methodExpression.getQualifierExpression();
+            PsiType returnType = methodCallExpression.resolveMethod().getReturnType();
+
+            if (qualifierExpression != null && !PsiType.VOID.equals(returnType)) {
+                stringBuilder.append("org.mockito.Mockito.when(")
+                        .append(methodCallExpression.getText())
+                        .append(").thenReturn(")
+                        .append(getDefaultReturnType(returnType))
+                        .append(");");
+            }
+
+            int a = 5;
+        }
+
+        private String getDefaultReturnType(PsiType returnType) {
+            if (PsiType.BOOLEAN.equals(returnType)) {
+                return "false";
+            } else if (PsiType.BYTE.equals(returnType) || PsiType.SHORT.equals(returnType) || PsiType.INT.equals(returnType)) {
+                return "0";
+            } else if (PsiType.LONG.equals(returnType)) {
+                return "0L";
+            } else if (PsiType.FLOAT.equals(returnType)) {
+                return "0.0f";
+            } else if (PsiType.DOUBLE.equals(returnType)) {
+                return "0.0d";
+            } else if (PsiType.CHAR.equals(returnType)) {
+                return "\u0000";
+            } else {
+                return "new " + returnType.getPresentableText() + "()";
             }
         }
+    }
+
+    private void addMethodTests(Project project, PsiMethod method, PsiClass psiClass, PsiClass psiTestClass) {
+        WalkingVisitor visitor = new WalkingVisitor(psiClass, new StringBuilder());
+        method.accept(visitor);
+        StringBuilder stringBuilder = visitor.getStringBuilder();
+
+        //PsiStatement whenStatements = JavaPsiFacade.getElementFactory(project).createStatementFromText(stringBuilder.toString(), null);
 
         String methodName = method.getName();
         String capitalizedMethodName = methodName.substring(0, 1).toUpperCase() + methodName.substring(1);
-        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
+        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {" + stringBuilder.toString() + "}";
         createAnnotatedMethod(methodText, project, psiTestClass, "org.junit.jupiter.api.Test");
     }
 
