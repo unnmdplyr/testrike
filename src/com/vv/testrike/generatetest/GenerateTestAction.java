@@ -21,6 +21,7 @@ import com.intellij.psi.impl.file.JavaDirectoryServiceImpl;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.OpenSourceUtil;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
@@ -62,13 +63,13 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
-    private void addMethodsTests(Project project, PsiClass psiClass, PsiClass psiTestClass) {
+    private void addMethodsTests(Project project, @NotNull PsiClass psiClass, PsiClass psiTestClass) {
         Stream.of(psiClass.getMethods())
                 .filter(method -> !method.isConstructor() && isPublicOrProtectedOrPackagePrivate(method))
-                .forEach(method -> addMethodTests(project, method, psiClass, psiTestClass));
+                .forEach(method -> addMethodTests(project, method, psiTestClass));
     }
 
-    private boolean isPublicOrProtectedOrPackagePrivate(PsiMethod method) {
+    private boolean isPublicOrProtectedOrPackagePrivate(@NotNull PsiMethod method) {
         PsiModifierList modifierList = method.getModifierList();
 
         return modifierList.hasExplicitModifier("public")
@@ -84,6 +85,7 @@ public class GenerateTestAction extends AnAction {
             givenStatements = new ArrayList<>();
         }
 
+        @Contract(pure = true)
         private List<String> getGivenStatements() {
             return givenStatements;
         }
@@ -101,6 +103,7 @@ public class GenerateTestAction extends AnAction {
             }
         }
 
+        @NotNull
         private String getDefaultReturnType(PsiType returnType) {
             if (PsiType.BOOLEAN.equals(returnType)) {
                 return "false";
@@ -120,7 +123,7 @@ public class GenerateTestAction extends AnAction {
         }
     }
 
-    private void addMethodTests(Project project, PsiMethod method, PsiClass psiClass, PsiClass psiTestClass) {
+    private void addMethodTests(Project project, @NotNull PsiMethod method, PsiClass psiTestClass) {
         WalkingVisitor visitor = new WalkingVisitor();
         method.accept(visitor);
 
@@ -132,21 +135,22 @@ public class GenerateTestAction extends AnAction {
         addGivenStatements(project, createdMethod, visitor.getGivenStatements());
     }
 
-    private PsiMethod createAnnotatedMethod(String methodText, Project project, PsiClass psiTestClass, String annotation) {
+    private PsiMethod createAnnotatedMethod(String methodText, Project project, @NotNull PsiClass psiTestClass, String annotation) {
         PsiMethod psiMethod = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
         psiMethod.getModifierList().addAnnotation(annotation);
 
-        return WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiMethod, IncorrectOperationException>) () -> {
-            return (PsiMethod) psiTestClass.add(psiMethod);
-        });
+        return WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiMethod, IncorrectOperationException>) () ->
+                (PsiMethod) psiTestClass.add(psiMethod)
+        );
     }
 
-    private void addGivenStatements(Project project, PsiMethod psiMethod, List<String> givenStatements) {
+    private void addGivenStatements(Project project, @NotNull PsiMethod psiMethod, @NotNull List<String> givenStatements) {
+        PsiElementFactory psiElementFactory = JavaPsiFacade.getElementFactory(project);
         List<PsiStatement> psiGivenStatements = givenStatements.stream()
-                .map(givenStatement -> JavaPsiFacade.getElementFactory(project).createStatementFromText(givenStatement, psiMethod.getBody()))
+                .map(givenStatement -> psiElementFactory.createStatementFromText(givenStatement, psiMethod.getBody()))
                 .collect(Collectors.toList());
 
-        PsiComment commentGiven = JavaPsiFacade.getElementFactory(project).createCommentFromText("//  given", psiMethod.getBody());
+        PsiComment commentGiven = psiElementFactory.createCommentFromText("//  given", psiMethod.getBody());
 
         WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
             if (!psiGivenStatements.isEmpty()) {
