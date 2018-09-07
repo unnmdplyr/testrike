@@ -25,8 +25,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class GenerateTestAction extends AnAction {
@@ -76,37 +78,27 @@ public class GenerateTestAction extends AnAction {
 
     private static class WalkingVisitor extends JavaRecursiveElementWalkingVisitor {
 
-        private final PsiClass psiClass;
-        private final StringBuilder stringBuilder;
+        private final List<String> givenStatements;
 
-        WalkingVisitor(PsiClass psiClass, StringBuilder stringBuilder) {
-            this.psiClass = psiClass;
-            this.stringBuilder = stringBuilder;
+        private WalkingVisitor() {
+            givenStatements = new ArrayList<>();
         }
 
-        private StringBuilder getStringBuilder() {
-            return stringBuilder;
+        private List<String> getGivenStatements() {
+            return givenStatements;
         }
 
         @Override
         public void visitMethodCallExpression(PsiMethodCallExpression methodCallExpression) {
-            PsiExpressionList argumentList = methodCallExpression.getArgumentList();
-            Stream.of(argumentList.getExpressions())
-                    .forEach(argExpression -> System.out.println(argExpression.getType().getCanonicalText()));
-
             PsiReferenceExpression methodExpression = methodCallExpression.getMethodExpression();
             PsiExpression qualifierExpression = methodExpression.getQualifierExpression();
             PsiType returnType = methodCallExpression.resolveMethod().getReturnType();
 
             if (qualifierExpression != null && !PsiType.VOID.equals(returnType)) {
-                stringBuilder.append("org.mockito.Mockito.when(")
-                        .append(methodCallExpression.getText())
-                        .append(").thenReturn(")
-                        .append(getDefaultReturnType(returnType))
-                        .append(");");
+                String givenStatement = "org.mockito.Mockito.when(" + methodCallExpression.getText() +
+                        ").thenReturn(" + getDefaultReturnType(returnType) + ");";
+                givenStatements.add(givenStatement);
             }
-
-            int a = 5;
         }
 
         private String getDefaultReturnType(PsiType returnType) {
@@ -129,25 +121,41 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addMethodTests(Project project, PsiMethod method, PsiClass psiClass, PsiClass psiTestClass) {
-        WalkingVisitor visitor = new WalkingVisitor(psiClass, new StringBuilder());
+        WalkingVisitor visitor = new WalkingVisitor();
         method.accept(visitor);
-        StringBuilder stringBuilder = visitor.getStringBuilder();
-
-        //PsiStatement whenStatements = JavaPsiFacade.getElementFactory(project).createStatementFromText(stringBuilder.toString(), null);
 
         String methodName = method.getName();
         String capitalizedMethodName = methodName.substring(0, 1).toUpperCase() + methodName.substring(1);
-        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {" + stringBuilder.toString() + "}";
-        createAnnotatedMethod(methodText, project, psiTestClass, "org.junit.jupiter.api.Test");
+        String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
+
+        PsiMethod createdMethod = createAnnotatedMethod(methodText, project, psiTestClass, "org.junit.jupiter.api.Test");
+        addGivenStatements(project, createdMethod, visitor.getGivenStatements());
     }
 
-    private void createAnnotatedMethod(String methodText, Project project, PsiClass psiTestClass, String annotation) {
+    private PsiMethod createAnnotatedMethod(String methodText, Project project, PsiClass psiTestClass, String annotation) {
         PsiMethod psiMethod = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
         psiMethod.getModifierList().addAnnotation(annotation);
 
-        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiElement, IncorrectOperationException>) () ->
-            psiTestClass.add(psiMethod)
-        );
+        return WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<PsiMethod, IncorrectOperationException>) () -> {
+            return (PsiMethod) psiTestClass.add(psiMethod);
+        });
+    }
+
+    private void addGivenStatements(Project project, PsiMethod psiMethod, List<String> givenStatements) {
+        List<PsiStatement> psiGivenStatements = givenStatements.stream()
+                .map(givenStatement -> JavaPsiFacade.getElementFactory(project).createStatementFromText(givenStatement, psiMethod.getBody()))
+                .collect(Collectors.toList());
+
+        PsiComment commentGiven = JavaPsiFacade.getElementFactory(project).createCommentFromText("//  given", psiMethod.getBody());
+
+        WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
+            if (!psiGivenStatements.isEmpty()) {
+                PsiElement firstChild = psiGivenStatements.get(0).getFirstChild();
+                psiGivenStatements.get(0).addBefore(commentGiven, firstChild);
+            }
+            psiGivenStatements.forEach(psiMethod.getBody()::add);
+            return null;
+        });
     }
 
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) {
