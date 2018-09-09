@@ -11,6 +11,9 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.impl.ModuleRootManagerImpl;
+import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.roots.libraries.LibraryTable;
+import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
@@ -26,11 +29,12 @@ import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class GenerateTestAction extends AnAction {
+
+    private TestLibraryAvailable testLibrary;
 
     @Override
     public void actionPerformed(AnActionEvent e) {
@@ -39,6 +43,7 @@ public class GenerateTestAction extends AnAction {
             return;
 
         Project project = e.getData(LangDataKeys.PROJECT);
+        testLibrary = getExistingExternalLibraries(project);
         try {
             WriteCommandAction.runWriteCommandAction(project, (ThrowableComputable<Void, IncorrectOperationException>) () -> {
                 PsiJavaFile psiJavaTestFile = getTestFile(e, project, psiClass);
@@ -59,6 +64,52 @@ public class GenerateTestAction extends AnAction {
         } catch (Exception e1) {
             e1.printStackTrace();
         }
+    }
+
+    private TestLibraryAvailable getExistingExternalLibraries(Project project) {
+        LibraryTable projectLibraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project);
+        final LibraryTable.ModifiableModel projectLibraryModel = projectLibraryTable.getModifiableModel();
+
+        if (isExternalLibraryInTheProject(projectLibraryModel, "org.junit.jupiter:junit-jupiter-api:")) {
+            return TestLibraryAvailable.JUNIT_JUPITER;
+        }
+
+        if (isExternalLibraryInTheProject(projectLibraryModel, "junit:junit:4")) {
+            return TestLibraryAvailable.JUNIT_4;
+        }
+
+        if (isExternalLibraryInTheProject(projectLibraryModel, "org.testng:testng:")) {
+            return TestLibraryAvailable.TESTNG;
+        }
+
+        if (isExternalLibraryInTheProject(projectLibraryModel, "junit:junit:3")) {
+            return TestLibraryAvailable.JUNIT_3;
+        }
+
+        return TestLibraryAvailable.NON;
+    }
+
+    private boolean isExternalLibraryInTheProject(@NotNull LibraryTable.ModifiableModel projectLibraryModel, String libraryId) {
+        return Stream.of(projectLibraryModel.getLibraries())
+                .map(Library::getName)
+                .anyMatch(name -> name.contains(libraryId));
+    }
+
+    private String getTestAnnotationFqnString() {
+        String fqnString = "";
+
+        switch (testLibrary) {
+            case JUNIT_JUPITER:
+                fqnString = "org.junit.jupiter.api.Test";
+                break;
+            case JUNIT_4:
+                fqnString = "org.junit.Test";
+                break;
+            case TESTNG:
+                fqnString = "org.testng.annotations.Test";
+                break;
+        }
+        return fqnString;
     }
 
     private void addMethodsTests(Project project, @NotNull PsiClass psiClass, PsiClass psiTestClass) {
@@ -87,7 +138,7 @@ public class GenerateTestAction extends AnAction {
         String methodText = "public void test" + capitalizedMethodName + "_Should_When() {}";
 
         PsiMethod psiMethod = JavaPsiFacade.getElementFactory(project).createMethodFromText(methodText, psiTestClass);
-        psiMethod.getModifierList().addAnnotation("org.junit.jupiter.api.Test");
+        psiMethod.getModifierList().addAnnotation(getTestAnnotationFqnString());
         return (PsiMethod) psiTestClass.add(psiMethod);
     }
 
@@ -110,32 +161,40 @@ public class GenerateTestAction extends AnAction {
     }
 
     private void addWhenStatement(Project project, @NotNull PsiMethod method, @NotNull PsiMethod createdTestMethod, @NotNull PsiClass psiTestClass) {
-        DefaultValue defaultValue = new DefaultValue();
-        StringBuilder stringBuilder = new StringBuilder();
-
-        Stream.of(method.getParameterList().getParameters())
-                .forEach(psiParameter -> stringBuilder.append(defaultValue.getDefaultReturnType(psiParameter.getType()) + ", "));
-
-        if (stringBuilder.length() > 0)
-            stringBuilder.delete(stringBuilder.length() - 2, stringBuilder.length());
-
         PsiField injectMocksField = getInjectMocksField(psiTestClass);
-        String methodCall = injectMocksField.getName() + "." + method.getName() + "(" + stringBuilder.toString() + ");";
+        String methodCall = injectMocksField.getName() + "." + method.getName() + "(" + createParameterListText(method) + ");";
 
-        PsiStatement whenStatement = JavaPsiFacade.getElementFactory(project).createStatementFromText(methodCall, createdTestMethod.getBody());
+        PsiElementFactory psiElementFactory = JavaPsiFacade.getElementFactory(project);
+        PsiStatement whenStatement = psiElementFactory.createStatementFromText(methodCall, createdTestMethod.getBody());
+
+        PsiComment commentWhen = psiElementFactory.createCommentFromText("//  when", createdTestMethod.getBody());
+
+        PsiElement firstChild = whenStatement.getFirstChild();
+        whenStatement.addBefore(commentWhen, firstChild);
+
         createdTestMethod.getBody().add(whenStatement);
     }
 
     @NotNull
-    private PsiField getInjectMocksField(@NotNull PsiClass psiTestClass) {
-        Optional<PsiField> injectMocksField = Stream.of(psiTestClass.getFields())
-                .filter(psiField -> psiField.getModifierList().findAnnotation("org.mockito.InjectMocks") != null)
-                .findFirst();
+    private String createParameterListText(@NotNull PsiMethod method) {
+        DefaultValue defaultValue = new DefaultValue();
+        StringBuilder stringBuilder = new StringBuilder();
 
-        if (!injectMocksField.isPresent()) {
-            throw new IncorrectOperationException("InjectMocks field should exist.\n");
-        }
-        return injectMocksField.get();
+        Stream.of(method.getParameterList().getParameters())
+                .forEach(psiParameter -> stringBuilder.append(defaultValue.getDefaultReturnType(psiParameter.getType())).append(", "));
+
+        if (stringBuilder.length() > 0)
+            stringBuilder.delete(stringBuilder.length() - 2, stringBuilder.length());
+
+        return stringBuilder.toString();
+    }
+
+    @NotNull
+    private PsiField getInjectMocksField(@NotNull PsiClass psiTestClass) {
+        return Stream.of(psiTestClass.getFields())
+                .filter(psiField -> psiField.getModifierList().findAnnotation("org.mockito.InjectMocks") != null)
+                .findFirst()
+                .orElseThrow(() -> new IncorrectOperationException("InjectMocks field should exist.\n"));
     }
 
     private void addMockFields(Project project, PsiClass psiClass, PsiClass psiTestClass) {

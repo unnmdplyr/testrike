@@ -1,18 +1,21 @@
-If the classpath contains junit 4.12 or jupiter or TestNG
-    then the @Test annotation on the unit test method should be different one.
-
 > Go through the production method and investigate the statements in it.
+
+Add setUp and tearDown methods. The annotations must be test library dependent.
+
+Add initMock() method to the setUp method.
 
 If constructor injection is used
     then the mock fields visibility must be the same as the fields visibility in the production code.
 
-Add given, when, then comments to the test code.
-
-Add when().thenReturn() parts.
+Add 'then' comments to the test code.
 
 Add verify() parts.
 
 Add assert parts.
+
+
+If no test library added to the project then add a default one, e.g. jupiter.
+
 
 If the test source folder doesn't exist
     then create a new one.
